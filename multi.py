@@ -13,42 +13,117 @@ class Interpreteur(Thread):
     
     def __init__(self):
         print('Initialisation...')
+        self.bots=[]
+
 
 class Bot(Thread):
     """ Bot de trading"""
 
-    def __init__(self, client, monnaie, argent):
+    def __init__(self, client, spot_monnaie, margin_monnaie, spot_usdt, spot_asset, margin_usdt, margin_asset):
         with verrou:
             self.log('Initialisation...')
             assert isinstance(client, Client)
             Thread.__init__(self)
             self.client=client
-            self.argent=argent
-            self.monnaie=monnaie
+            self.spot_monnaie=spot_monnaie
+            self.margin_monnaie=margin_monnaie
+            self.spot_usdt=spot_usdt
+            self.spot_asset=spot_asset
+            self.margin_usdt=margin_usdt
+            self.margin_asset=margin_asset
             self.continuer=True
-            self.last_order_memory=client.get_all_orders(symbol=MONNAIE)[-1]
+            self.last_order_memory=client.get_all_orders(symbol=spot_monnaie)[-1]
             self.last_order=None
 
-    def log(self, message):
+    def log(self, message:str):
         log_func(strftime('[%d/%m %H:%M:%S] Bot {} : {}'.format(id(self), message)))
 
     @property
     def detect_new_order(self):
-        self.last_order = self.client.get_all_orders(symbol=self.monnaie)[-1]
+        self.last_order = self.client.get_all_orders(symbol=self.spot_monnaie)[-1]
         return self.last_order['orderId'] == self.last_order_memory['orderId']
-
-    def buy_all(self):
+       
+        
+    def buy_as_strategy(self):
+        self.buy_spot_used_usdt = self.last_order['executedQty']*self.last_order['price'] 
+        #get buy_pourcentage
+        self.buy_pourcentage = (self.buy_spot_used_usdt)/(self.spot_usdt)
+        #usdt used by margin to buy
+        self.usdt_quantity = round(float((self.buy_pourcentage*self.margin_usdt)),5)
+        #quantity to be bought with margin_asset
+        self.asset_quantity = round(float((self.buy_pourcentage*self.margin_usdt)/(self.last_order['price']) - 0.00001),5)
+        #place order
         self.client.create_margin_order(
-                symbol=self.monnaie,
+                symbol=self.margin_monnaie,
                 side=SIDE_BUY,
                 type=ORDER_TYPE_MARKET,
-                quantity = round((connaitre_la_thune(client)-5)/float(client.get_recent_trades(symbol=self.monnaie)[-1]['price']), 4),
+                quantity = self.asset_quantity,
                 )
+        #actualise spot_wallet
+        self.spot_usdt=self.spot_usdt - self.lastorder['executedQty']*self.last_order['price']
+        self.spot_asset=self.spot_asset + self.lastorder['executedQty']
+        if round(float(self.usdt),5) - 0.00001 > 0 :
+            self.spot_usdt=round(float(self.usdt),5) - 0.00001
+        else :
+            self.spot_usdt=0.0
+        if round(float(self.asset),5)- 0.00001 > 0
+            self.spot_asset=round(float(self.asset),5)- 0.00001
+        else :
+            self.spot_asset=0.0
+        #actualise margin_wallet
+        self.margin_usdt=self.margin_usdt - self.usdt_quantity 
+        self.margin_asset=self.margin_asset + self.asset_quantity
+        if round(float(self.margin_usdt),5) - 0.00001 > 0 :
+            self.margin_usdt=round(float(self.margin_usdt),5) - 0.00001
+        else : 
+            self.margin_usdt=0.0
+        if round(float(self.margin_asset),5)- 0.00001 > 0 :
+            self.margin_asset=round(float(self.margin_asset),5)- 0.00001
+        else :
+            self.margin_asset=0.0
+        
+        
+    def sell_as_strategy(self):
+        self.sell_spot_used_asset = self.last_order['executedQty']
+        #get sell_pourcentage
+        self.sell_pourcentage = (sell_spot_used_asset)/(self.spot_asset)
+        #asset used by margin to sell
+        self.asset_quantity = round(float(self.sell_pourcentage*self.margin_asset),5)
+        #place order
+        client.create_margin_order(
+                        symbol=self.margin_monnaie,
+                        side=SIDE_SELL,
+                        type=ORDER_TYPE_MARKET,
+                        quantity=self.asset_quantity,
+                        )
+        #prix de vente
+        sell_price = client.get_all_margin_orders(symbol=margin_monnaie)[-1]['price']
+        #actualise spot_wallet
+        self.spot_usdt=self.spot_usdt + self.lastorder['executedQty']*self.last_order['price']
+        self.spot_asset=self.spot_asset - self.lastorder['executedQty']
+        if round(float(self.spot_usdt),5) - 0.00001 > 0 :
+            self.spot_usdt=round(float(self.spot_usdt),5) - 0.00001
+        else : 
+            self.spot_usdt=0.0
+        if round(float(self.spot_asset),5) - 0.00001 > 0 :
+            self.spot_asset=round(float(self.spot_asset),5) - 0.00001
+        else :
+            self.spot_asset=0.0
+        #actualise margin_wallet
+        self.margin_usdt=self.margin_usdt + self.asset_quantity*sell_price
+        self.margin_asset=self.margin_asset - self.asset_quantity
+        if round(float(self.margin_usdt),5) - 0.00001 > 0 :
+            self.margin_usdt=round(float(self.margin_usdt),5) - 0.00001
+        else :
+            self.margin_usdt=0.0
+        if round(float(self.margin_asset),5)- 0.00001 > 0 :
+            self.margin_asset=round(float(self.margin_asset),5)- 0.00001
+        else :
+            self.margin_asset=0.0
+        
 
-    def sell_all(self):
-        pass
 
-
+   
     def run(self):
         self.log("A l'ecoute...")
         while self.continuer:
