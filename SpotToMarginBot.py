@@ -1,7 +1,7 @@
 #coding:utf-8
 from threading import Thread, RLock
 from binance.client import Client
-from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET, TIME_IN_FORCE_GTC
+from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET
 from time import strftime, sleep
 
 def log_func(msg):
@@ -24,30 +24,31 @@ class Bot(Thread):
         self.margin_usdt=margin_usdt
         self.margin_asset=margin_asset
         self.continuer=True
-        self.last_order_memory=client.get_my_trades(symbol=self.spot_monnaie)[-1]
-        self.last_order=None
+        self.last_trade_memory=client.get_my_trades(symbol=self.spot_monnaie)[-1]
+        self.last_trade=None
         self.paused = False
+        self.last_order=client.get_all_orders(symbol=self.spot_monnaie)[-1]
 
     def log(self, message:str):
         log_func(strftime('[%d/%m %H:%M:%S] Bot {} : {}'.format(id(self), message)))
 
     @property
     def detect_new_order(self):
-        self.last_order = self.client.get_my_trades(symbol=self.spot_monnaie)[-1]
-        return not self.last_order['orderId'] == self.last_order_memory['orderId']
+        self.last_trade = self.client.get_my_trades(symbol=self.spot_monnaie)[-1]
+        return not self.last_trade['id'] == self.last_trade_memory['id']
        
-#self.last_order attributes : 'qty', 'price', 'quoteQty'
+#self.last_trade attributes : 'id', 'qty', 'price', 'quoteQty'
         
     def buy_as_strategy(self):
-        self.buy_spot_used_usdt = float(self.last_order['quoteQty'])
+        self.buy_spot_used_usdt = float(self.last_trade['quoteQty'])
         #get buy_pourcentage
         self.buy_pourcentage = (self.buy_spot_used_usdt)/float(self.spot_usdt)
         #usdt used by margin to buy
         self.usdt_quantity = self.buy_pourcentage*float(self.margin_usdt)
         #quantity to be bought with margin_asset
-        self.asset_quantity = float(int((self.usdt_quantity/float(self.last_order['price']))*10**5)/10**5)
+        self.asset_quantity = float(int((self.usdt_quantity/float(self.last_trade['price']))*10**5)/10**5)
         #Check les quantites
-        if self.asset_quantity*float(self.last_order['price']) > 10.5 :
+        if self.asset_quantity*float(self.last_trade['price']) > 10.5 :
             #place order
             self.client.create_margin_order(
                     symbol=self.margin_monnaie,
@@ -58,8 +59,8 @@ class Bot(Thread):
             #prix d achat
             self.buy_price = float(client.get_margin_trades(symbol=margin_monnaie)[-1]['price'])
             #actualise spot_wallet
-            self.spot_usdt=self.spot_usdt - float(self.last_order['quoteQty'])
-            self.spot_asset=self.spot_asset + float(self.last_order['qty'])
+            self.spot_usdt=self.spot_usdt - float(self.last_trade['quoteQty'])
+            self.spot_asset=self.spot_asset + float(self.last_trade['qty'])
             if float(int(self.spot_usdt*10**5)/10**5) > 0.01 :
                 self.spot_usdt=float(int(self.spot_usdt*10**5)/10**5)
             else :
@@ -88,13 +89,13 @@ class Bot(Thread):
         
         
     def sell_as_strategy(self):
-        self.sell_spot_used_asset = float(self.last_order['qty'])
+        self.sell_spot_used_asset = float(self.last_trade['qty'])
         #get sell_pourcentage
         self.sell_pourcentage = (self.sell_spot_used_asset)/(self.spot_asset)
         #asset used by margin to sell
         self.asset_quantity = float(int(self.sell_pourcentage*self.margin_asset*10**5)/10**5)
         #check les quantites
-        if self.asset_quantity*float(self.last_order['price']) > 10.5 :
+        if self.asset_quantity*float(self.last_trade['price']) > 10.5 :
             #place order
             client.create_margin_order(
                             symbol=self.margin_monnaie,
@@ -105,8 +106,8 @@ class Bot(Thread):
             #prix de vente
             self.sell_price = float(float(client.get_margin_trades(symbol=margin_monnaie)[-1]['price']))
             #actualise spot_wallet
-            self.spot_usdt=self.spot_usdt + float(self.last_order['quoteQty'])
-            self.spot_asset=self.spot_asset - float(self.last_order['qty'])
+            self.spot_usdt=self.spot_usdt + float(self.last_trade['quoteQty'])
+            self.spot_asset=self.spot_asset - float(self.last_trade['qty'])
             if float(int(self.spot_usdt*10**5)/10**5) > 0.01 :
                 self.spot_usdt=float(int(self.spot_usdt*10**5)/10**5)
             else : 
@@ -141,8 +142,8 @@ class Bot(Thread):
             while self.paused:
                 pass
             if self.detect_new_order:
-                self.last_order_memory = self.last_order
-                
+                self.last_trade_memory = self.last_trade
+                self.last_order=client.get_all_orders(symbol=self.spot_monnaie)[-1]
                 if self.last_order['side'] == 'BUY':
                     self.log('Nouvel achat repere, copie en cours...')
                     self.buy_as_strategy()
@@ -207,14 +208,14 @@ while True:
         if comm=='resume all':
             for b in bots:
                 b.paused=False
-                b.last_order_memory = b.client.get_my_trades(symbol=self.spot_monnaie)[-1]
+                b.last_trade_memory = b.client.get_my_trades(symbol=self.spot_monnaie)[-1]
         elif ' ' not in comm:
             print('G pa capte')
         else:
             for b in bots:
                 if str(id(b))==comm.split(' ')[1]:
                     b.paused = False
-                    b.last_order_memory = b.client.get_my_trades(symbol=self.spot_monnaie)[-1]
+                    b.last_trade_memory = b.client.get_my_trades(symbol=self.spot_monnaie)[-1]
                     break
             else:
                 print("Ce bot n'existe pas")
